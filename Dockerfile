@@ -1,3 +1,3 @@
-FROM public.ecr.aws/lambda/nodejs18.x
+FROM public.ecr.aws/lambda/nodejs:18
 COPY . .
 CMD [ "index.handler" ]
