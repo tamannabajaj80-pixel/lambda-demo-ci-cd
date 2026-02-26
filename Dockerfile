@@ -1,3 +1,3 @@
-FROM node:18-alpine
-COPY index.js /app/index.js
-CMD ["node", "/app/index.js"]
+FROM public.ecr.aws/lambda/nodejs18.x
+COPY . .
+CMD [ "index.handler" ]

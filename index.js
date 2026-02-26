@@ -1,3 +1,6 @@
 exports.handler = async () => {
-  return "Hello from CI/CD Demo!";
+  return {
+    statusCode: 200,
+    body: "Hello from Lambda automated deployment!"
+  };
 };
