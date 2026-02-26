@@ -10,9 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Step 1: Get the latest code from repository
       - name: Checkout code
         uses: actions/checkout@v3
 
+      # Step 2: Configure AWS credentials using GitHub secrets
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -20,17 +22,24 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # Step 3: Login to Amazon ECR (Elastic Container Registry)
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v1
 
+      # Step 4: Build Docker image and push to ECR
       - name: Build, Tag, and Push Docker image to ECR
         run: |
+          # Build Docker image using Dockerfile
           docker build -t ${{ secrets.ECR_REPOSITORY }} .
+          # Tag image with ECR repository URI
           docker tag ${{ secrets.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
+          # Push image to ECR
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
 
+      # Step 5: Update Lambda function with new Docker image
       - name: Update Lambda Function
         run: |
+          # Point Lambda function to the new Docker image
           aws lambda update-function-code \
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
             --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
