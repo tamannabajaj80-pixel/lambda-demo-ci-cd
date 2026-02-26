@@ -1,3 +1,3 @@
 exports.handler = async () => {
-  return "Hello from automated Lambda!";
+  return "Hello from CI/CD Demo!";
 };

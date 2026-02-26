@@ -1,3 +1,3 @@
-FROM public.ecr.aws/lambda/nodejs:18
-COPY index.js ${LAMBDA_TASK_ROOT}
-CMD ["index.handler"]
+FROM node:18-alpine
+COPY index.js /app/index.js
+CMD ["node", "/app/index.js"]
