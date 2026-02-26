@@ -19,5 +19,4 @@ jobs:
         run: docker build -t demo-image .
 
       - name: Fake Deploy Step
-        run: echo "Deployment Successful: Image deployed to mock environment!"
- 
+        run: echo "Deployment Successful:Image deployed to mock environment!"
