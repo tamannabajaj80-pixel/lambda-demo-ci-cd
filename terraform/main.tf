@@ -49,7 +49,7 @@ resource "aws_apigatewayv2_integration" "sqs_integration" {
   connection_type           = "INTERNET"
   description              = "SQS integration"
   integration_uri          = "arn:aws:apigateway:${data.aws_region.current.name}:sqs:path/${var.project_name}-queue"
-  credentials_arn          = aws_iam_role.api_gateway_sqs_role.arn
+  credentials_arn          = data.aws_iam_role.api_gateway_sqs_role.arn
   
   request_parameters = {
     "append:header.Content-Type" = "'application/x-www-form-urlencoded'"
