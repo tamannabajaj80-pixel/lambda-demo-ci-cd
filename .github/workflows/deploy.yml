@@ -43,3 +43,45 @@ jobs:
           aws lambda update-function-code \
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
             --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
+
+      # Step 6: Create Functional URL (FIRST TIME ONLY)
+      - name: Create Functional URL
+        run: |
+          # Create URL only if it doesn't exist (smart trick)
+          aws lambda create-function-url-config \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --auth-type NONE || echo "Functional URL already exists - skipping creation"
+
+      # Step 7: Add Lambda URL permission (FIRST TIME ONLY)  
+      - name: Add URL Permission
+        run: |
+          # Add public access permission only if needed
+          aws lambda add-permission \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --action lambda:InvokeFunctionUrl \
+            --principal "*" \
+            --statement-id FunctionURLAllowPublicAccess \
+            --function-url-auth-type NONE || echo "URL permission already exists - skipping"
+
+      # Step 8: Get Functional URL and Test Deployment
+      - name: Test Lambda Functional URL
+        run: |
+          # Get the Functional URL
+          FUNCTION_URL=$(aws lambda get-function-url-config \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --query 'FunctionUrl' --output text)
+          
+          echo "🚀 Functional URL: $FUNCTION_URL"
+          echo "🧪 Testing deployment..."
+          
+          # Test the deployed Lambda function
+          RESPONSE=$(curl -s "$FUNCTION_URL")
+          echo "📦 Lambda Response: $RESPONSE"
+          
+          # Validate response
+          if [[ $RESPONSE == *"Hello from Lambda automated deployment!"* ]]; then
+            echo "✅ Deployment SUCCESS - Lambda is working correctly!"
+          else
+            echo "❌ Deployment FAILED - Unexpected response"
+            exit 1
+          fi
