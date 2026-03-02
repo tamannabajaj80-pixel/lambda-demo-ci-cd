@@ -125,89 +125,7 @@ jobs:
           echo "🔗 Lambda trigger on SQS created!"
           echo "🎯 SQS → Lambda trigger chain ready!"
 
-      # Step 11: Deploy API Gateway
-      - name: Deploy API Gateway
-        run: |
-          echo "🚀 Deploying API Gateway..."
-          
-          # Create POST method for /send endpoint
-          aws apigateway put-method \
-            --rest-api-id $API_GATEWAY_ID \
-            --resource-id $SEND_RESOURCE_ID \
-            --http-method POST \
-            --authorization-type "NONE"
-          
-          echo "✅ POST method created for /send endpoint"
-          
-          # Create integration (if not already exists from Step 8)
-          echo "🔗 Ensuring API Gateway integration exists..."
-          
-          # Create IAM role for API Gateway to access SQS (if needed)
-          ROLE_NAME="demo-api-sqs-role"
-          ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text 2>/dev/null || echo "")
-          
-          if [[ -z "$ROLE_ARN" ]]; then
-            echo "🆕 Creating IAM role for API Gateway..."
-            echo '{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "apigateway.amazonaws.com"
-      },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}' > trust-policy.json
-            
-            aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document file://trust-policy.json
-            
-            echo '{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "sqs:SendMessage"
-      ],
-      "Resource": "'$SQS_QUEUE_URL'"
-    }
-  ]
-}' > sqs-policy.json
-            
-            aws iam put-role-policy --role-name $ROLE_NAME --policy-name "SQSSendMessage" --policy-document file://sqs-policy.json
-            ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text)
-          fi
-          
-          # Create integration for POST method
-          aws apigateway put-integration \
-            --rest-api-id $API_GATEWAY_ID \
-            --resource-id $SEND_RESOURCE_ID \
-            --http-method POST \
-            --type AWS \
-            --integration-http-method POST \
-            --uri "arn:aws:apigateway:${{ secrets.AWS_REGION }}:sqs:path/${{ secrets.AWS_ACCOUNT_ID }}/demo-auto-queue" \
-            --credentials $ROLE_ARN \
-            --request-templates '{"application/json":"Action=SendMessage&MessageBody=$util.urlEncode($input.body)"}'
-          
-          echo "✅ Integration created for POST method"
-          
-          # Create deployment
-          DEPLOYMENT_ID=$(aws apigateway create-deployment \
-            --rest-api-id $API_GATEWAY_ID \
-            --stage-name prod \
-            --query 'id' \
-            --output text)
-          
-          echo "✅ API Gateway deployed with ID: $DEPLOYMENT_ID"
-          
-          # Get API URL
-          API_URL="https://$API_GATEWAY_ID.execute-api.${{ secrets.AWS_REGION }}.amazonaws.com/prod/send"
-          echo "API_GATEWAY_URL=$API_URL" >> $GITHUB_ENV
-          echo "🌐 API Gateway URL: $API_URL"
-
-      # Step 12: Test the deployment
+      # Step 11: Test the deployment
       - name: Test Lambda Function
         run: |
           echo "🧪 Testing Lambda deployment..."
@@ -225,7 +143,7 @@ jobs:
             exit 1
           fi
 
-      # Step 13: Test SQS Queue
+      # Step 12: Test SQS Queue
       - name: Test SQS Queue
         run: |
           echo "🧪 Testing SQS Queue..."
