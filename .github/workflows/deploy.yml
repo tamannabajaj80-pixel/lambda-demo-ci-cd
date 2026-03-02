@@ -1,4 +1,4 @@
-name: Complete Enterprise Automation
+name: Simple Lambda Deployment
 
 on:
   push:
@@ -36,28 +36,7 @@ jobs:
           # Push image to ECR
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/lambda-build-deploy-auto:latest
 
-      # Step 5: Deploy ALL AWS Resources with Terraform (Smart Detection)
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: "~1.0"
-
-      - name: Terraform Init
-        run: |
-          cd terraform
-          terraform init
-
-      - name: Terraform Plan (Smart Detection)
-        run: |
-          cd terraform
-          terraform plan -var="lambda_function_name=${{ secrets.LAMBDA_FUNCTION_NAME }}" -var="lambda_execution_role_name=${{ secrets.LAMBDA_EXECUTION_ROLE_NAME }}"
-
-      - name: Terraform Apply (Create Missing Resources Only)
-        run: |
-          cd terraform
-          terraform apply -auto-approve -var="lambda_function_name=${{ secrets.LAMBDA_FUNCTION_NAME }}" -var="lambda_execution_role_name=${{ secrets.LAMBDA_EXECUTION_ROLE_NAME }}"
-
-      # Step 6: Update Lambda function with new Docker image
+      # Step 5: Update Lambda function with new Docker image
       - name: Update Lambda Function
         run: |
           # Point Lambda function to the new Docker image
@@ -65,118 +44,20 @@ jobs:
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
             --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/lambda-build-deploy-auto:latest
 
-      # Step 7: Get ALL Infrastructure URLs
-      - name: Get Infrastructure URLs
+      # Step 6: Test the deployment
+      - name: Test Lambda Function
         run: |
-          cd terraform
-          terraform output -json > outputs.json
+          echo "🧪 Testing Lambda deployment..."
           
-          # Use existing Lambda URL
-          FUNCTION_URL=$(terraform output -raw existing_lambda_function_url)
-          API_ENDPOINT=$(terraform output -raw api_gateway_endpoint)
-          SQS_QUEUE_URL=$(terraform output -raw sqs_queue_url)
-          
-          echo "FUNCTION_URL=$FUNCTION_URL" >> $GITHUB_ENV
-          echo "API_ENDPOINT=$API_ENDPOINT" >> $GITHUB_ENV
-          echo "SQS_QUEUE_URL=$SQS_QUEUE_URL" >> $GITHUB_ENV
-          
-          echo "🚀 Lambda Function URL: $FUNCTION_URL"
-          echo "🌐 API Gateway Endpoint: $API_ENDPOINT"
-          echo "📨 SQS Queue URL: $SQS_QUEUE_URL"
-
-      # Step 8: Test Functional URL (Direct Lambda Access)
-      - name: Test Lambda Functional URL
-        run: |
-          echo "🧪 Testing Functional URL..."
+          # Test your existing Functional URL
+          FUNCTION_URL="https://jxmv5nfxua7xh6gbdjt7d2fmby0cpvfd.lambda-url.ap-south-1.on.aws/"
           RESPONSE=$(curl -s "$FUNCTION_URL")
-          echo "📦 Functional URL Response: $RESPONSE"
+          
+          echo "� Lambda Response: $RESPONSE"
           
           if [[ $RESPONSE == *"Lambda automated deployment"* ]]; then
-            echo "✅ Functional URL Test PASSED"
+            echo "✅ Deployment SUCCESS - Lambda is working!"
           else
-            echo "❌ Functional URL Test FAILED"
+            echo "❌ Deployment FAILED - Unexpected response"
             exit 1
           fi
-
-      # Step 9: Test API Gateway → SQS → Lambda Batch Processing
-      - name: Test API to SQS to Lambda Flow
-        run: |
-          echo "🧪 Testing API → SQS → Lambda batch processing..."
-          
-          # Send test message via API Gateway (simulating Excel → JSON data)
-          TEST_MESSAGE='{"source": "excel_data", "record_id": 1, "data": "sample payload", "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}'
-          
-          API_RESPONSE=$(curl -s -X POST \
-            -H "Content-Type: application/json" \
-            -d "$TEST_MESSAGE" \
-            "$API_ENDPOINT")
-          
-          echo "📨 API Gateway Response: $API_RESPONSE"
-          
-          if [[ $API_RESPONSE == *"Success"* ]] || [[ $API_RESPONSE == *"MessageId"* ]]; then
-            echo "✅ Message sent to SQS successfully"
-          else
-            echo "❌ Failed to send message to SQS"
-            exit 1
-          fi
-          
-          # Wait for Lambda to process SQS batch
-          echo "⏳ Waiting for Lambda batch processing..."
-          sleep 15
-          
-          # Test Functional URL to confirm Lambda is still working
-          LAMBDA_RESPONSE=$(curl -s "$FUNCTION_URL")
-          echo "📦 Lambda Status Check: $LAMBDA_RESPONSE"
-
-      # Step 10: Test SQS Batch Processing (Multiple Messages)
-      - name: Test SQS Batching (Multiple Messages)
-        run: |
-          echo "🧪 Testing SQS batching with multiple messages..."
-          
-          # Send multiple messages quickly (simulating bulk Excel data)
-          for i in {1..5}; do
-            BATCH_MESSAGE='{"batch_id": "excel_batch_1", "row_id": '$i', "data": "excel_row_data_'$i'", "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}'
-            
-            API_RESPONSE=$(curl -s -X POST \
-              -H "Content-Type: application/json" \
-              -d "$BATCH_MESSAGE" \
-              "$API_ENDPOINT")
-            
-            echo "📨 Batch message $i sent: $API_RESPONSE"
-            sleep 0.5
-          done
-          
-          # Wait for batch processing (SQS sends 5 messages together)
-          echo "⏳ Waiting for SQS batch processing (5 messages)..."
-          sleep 20
-          
-          echo "✅ SQS Batching Test Completed - 5 messages processed together"
-
-      # Step 11: Final System Health Check
-      - name: Final System Health Check
-        run: |
-          echo "🏥 Final System Health Check..."
-          
-          # Test Functional URL
-          FUNCTION_RESPONSE=$(curl -s "$FUNCTION_URL")
-          echo "🚀 Functional URL: $FUNCTION_RESPONSE"
-          
-          # Test API Gateway with final health check
-          HEALTH_CHECK='{"health": "end_to_end_test", "system": "excel_to_lambda_pipeline", "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}'
-          API_RESPONSE=$(curl -s -X POST \
-            -H "Content-Type: application/json" \
-            -d "$HEALTH_CHECK" \
-            "$API_ENDPOINT")
-          echo "🌐 API Gateway Health Check: $API_RESPONSE"
-          
-          echo "🎉 COMPLETE ENTERPRISE AUTOMATION SUCCESS!"
-          echo "📊 System Components Working:"
-          echo "  ✅ Docker-based Lambda Function"
-          echo "  ✅ ECR Image Repository"
-          echo "  ✅ SQS Queue (One-time creation)"
-          echo "  ✅ API Gateway (Excel → JSON endpoint)"
-          echo "  ✅ SQS → Lambda Batch Processing"
-          echo "  ✅ Lambda Function URL (Public API)"
-          echo "  ✅ IAM Roles & Policies"
-          echo "  ✅ End-to-End Data Pipeline"
-          echo "  ✅ 100% GitHub Actions Automation"
