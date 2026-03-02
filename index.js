@@ -1,6 +1,6 @@
 exports.handler = async () => {
   return {
     statusCode: 200,
-    body: "finally  Lambda automated deployment completed!"
+    body: "yeeeh finaaly functioanl url created Lambda automated deployment completed!"
   };
 };
