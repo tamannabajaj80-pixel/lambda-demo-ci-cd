@@ -71,7 +71,8 @@ jobs:
           cd terraform
           terraform output -json > outputs.json
           
-          FUNCTION_URL=$(terraform output -raw lambda_function_url)
+          # Use existing Lambda URL
+          FUNCTION_URL=$(terraform output -raw existing_lambda_function_url)
           API_ENDPOINT=$(terraform output -raw api_gateway_endpoint)
           SQS_QUEUE_URL=$(terraform output -raw sqs_queue_url)
           

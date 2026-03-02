@@ -44,11 +44,11 @@ resource "aws_apigatewayv2_api" "main" {
 # API Gateway Integration with SQS
 resource "aws_apigatewayv2_integration" "sqs_integration" {
   api_id           = aws_apigatewayv2_api.main.id
-  integration_type = "AWS_PROXY"
+  integration_type = "AWS"
   
   connection_type           = "INTERNET"
   description              = "SQS integration"
-  integration_uri          = "arn:aws:apigateway:${var.aws_region}:sqs:path/${var.project_name}-queue"
+  integration_uri          = "arn:aws:apigateway:${data.aws_region.current.name}:sqs:path/${var.project_name}-queue"
   credentials_arn          = aws_iam_role.api_gateway_sqs_role.arn
   
   request_parameters = {
@@ -59,6 +59,9 @@ resource "aws_apigatewayv2_integration" "sqs_integration" {
     "application/json" = "Action=SendMessage&MessageBody=$util.urlEncode($input.body)"
   }
 }
+
+# Data source for current region
+data "aws_region" "current" {}
 
 # API Gateway Route
 resource "aws_apigatewayv2_route" "sqs_route" {
@@ -132,29 +135,7 @@ resource "aws_lambda_event_source_mapping" "sqs_lambda_trigger" {
   depends_on = [aws_iam_role_policy_attachment.lambda_sqs_policy]
 }
 
-# 6. Lambda Functional URL (if not exists)
-resource "aws_lambda_function_url" "lambda_url" {
-  function_name = var.lambda_function_name
-  authorization_type = "NONE"
-  
-  depends_on = [aws_iam_role_policy_attachment.lambda_url_policy]
-}
-
-# Lambda URL Permissions
-resource "aws_lambda_permission" "allow_url_access" {
-  statement_id  = "FunctionURLAllowPublicAccess"
-  action        = "lambda:InvokeFunctionUrl"
-  function_name = var.lambda_function_name
-  principal     = "*"
-}
-
-# Lambda URL IAM Policy
-resource "aws_iam_role_policy_attachment" "lambda_url_policy" {
-  role       = var.lambda_execution_role_name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-}
-
-# 7. Lambda IAM Role for SQS access
+# 6. Lambda IAM Role for SQS access
 resource "aws_iam_role_policy_attachment" "lambda_sqs_policy" {
   role       = var.lambda_execution_role_name
   policy_arn = aws_iam_policy.lambda_sqs_policy.arn
@@ -204,12 +185,12 @@ output "api_gateway_endpoint" {
   value       = "${aws_apigatewayv2_stage.main.invoke_url}/messages"
 }
 
-output "lambda_function_url" {
-  description = "Lambda Function URL"
-  value       = aws_lambda_function_url.lambda_url.function_url
-}
-
 output "lambda_event_source_mapping_uuid" {
   description = "Lambda Event Source Mapping UUID"
   value       = aws_lambda_event_source_mapping.sqs_lambda_trigger.uuid
+}
+
+output "existing_lambda_function_url" {
+  description = "Existing Lambda Function URL"
+  value       = "https://jxmv5nfxua7xh6gbdjt7d2fmby0cpvfd.lambda-url.ap-south-1.on.aws/"
 }
