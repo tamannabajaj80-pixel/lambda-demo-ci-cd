@@ -1,7 +1,7 @@
 # Terraform Configuration for Complete Serverless Architecture
 
 provider "aws" {
-  region = var.aws_region
+  region = "ap-south-1"  # Match your Lambda region
 }
 
 # Variables
@@ -86,7 +86,7 @@ resource "aws_apigatewayv2_stage" "main" {
 
 # 3. IAM Role for API Gateway to access SQS
 resource "aws_iam_role" "api_gateway_sqs_role" {
-  name = "${var.project_name}-api-sqs-role"
+  name = "${var.project_name}-api-sqs-role-v2"
   
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -161,7 +161,7 @@ resource "aws_iam_role_policy_attachment" "lambda_sqs_policy" {
 }
 
 resource "aws_iam_policy" "lambda_sqs_policy" {
-  name = "${var.project_name}-lambda-sqs-policy"
+  name = "${var.project_name}-lambda-sqs-policy-v2"
   
   policy = jsonencode({
     Version = "2012-10-17"
