@@ -87,28 +87,15 @@ resource "aws_apigatewayv2_stage" "main" {
   auto_deploy = true
 }
 
-# 3. IAM Role for API Gateway to access SQS
-resource "aws_iam_role" "api_gateway_sqs_role" {
-  name = "${var.project_name}-api-sqs-role-v2"
-  
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "apigateway.amazonaws.com"
-        }
-      }
-    ]
-  })
+# 3. Use existing IAM Role for API Gateway to access SQS
+data "aws_iam_role" "api_gateway_sqs_role" {
+  name = "lambda-demo-ci-cd-api-sqs-role-v2"
 }
 
 # IAM Policy for API Gateway
 resource "aws_iam_role_policy" "api_gateway_sqs_policy" {
   name = "${var.project_name}-api-sqs-policy"
-  role = aws_iam_role.api_gateway_sqs_role.id
+  role = data.aws_iam_role.api_gateway_sqs_role.id
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -135,38 +122,15 @@ resource "aws_lambda_event_source_mapping" "sqs_lambda_trigger" {
   depends_on = [aws_iam_role_policy_attachment.lambda_sqs_policy]
 }
 
-# 6. Lambda IAM Role for SQS access
-resource "aws_iam_role_policy_attachment" "lambda_sqs_policy" {
-  role       = var.lambda_execution_role_name
-  policy_arn = aws_iam_policy.lambda_sqs_policy.arn
+# 6. Use existing IAM Policy for Lambda SQS access
+data "aws_iam_policy" "lambda_sqs_policy" {
+  name = "lambda-demo-ci-cd-lambda-sqs-policy-v2"
 }
 
-resource "aws_iam_policy" "lambda_sqs_policy" {
-  name = "${var.project_name}-lambda-sqs-policy-v2"
-  
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "sqs:ReceiveMessage",
-          "sqs:DeleteMessage",
-          "sqs:GetQueueAttributes"
-        ]
-        Resource = aws_sqs_queue.lambda_queue.arn
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "arn:aws:logs:*:*:*"
-      }
-    ]
-  })
+# Lambda IAM Role for SQS access
+resource "aws_iam_role_policy_attachment" "lambda_sqs_policy" {
+  role       = var.lambda_execution_role_name
+  policy_arn = data.aws_iam_policy.lambda_sqs_policy.arn
 }
 
 # Output Variables
