@@ -146,7 +146,6 @@ resource "aws_lambda_permission" "allow_url_access" {
   action        = "lambda:InvokeFunctionUrl"
   function_name = var.lambda_function_name
   principal     = "*"
-  url_auth_type = "NONE"
 }
 
 # Lambda URL IAM Policy
