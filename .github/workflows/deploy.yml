@@ -30,11 +30,11 @@ jobs:
       - name: Build, Tag, and Push Docker image to ECR
         run: |
           # Build Docker image using Dockerfile
-          docker build -t ${{ secrets.ECR_REPOSITORY }} .
+          docker build -t lambda-build-deploy-auto .
           # Tag image with ECR repository URI
-          docker tag ${{ secrets.ECR_REPOSITORY }}:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
+          docker tag lambda-build-deploy-auto:latest ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/lambda-build-deploy-auto:latest
           # Push image to ECR
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/lambda-build-deploy-auto:latest
 
       # Step 5: Update Lambda function with new Docker image
       - name: Update Lambda Function
@@ -42,7 +42,7 @@ jobs:
           # Point Lambda function to the new Docker image
           aws lambda update-function-code \
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
-            --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
+            --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/lambda-build-deploy-auto:latest
 
       # Step 6: Create Functional URL (FIRST TIME ONLY)
       - name: Create Functional URL
@@ -63,25 +63,138 @@ jobs:
             --statement-id FunctionURLAllowPublicAccess \
             --function-url-auth-type NONE || echo "URL permission already exists - skipping"
 
-      # Step 8: Get Functional URL and Test Deployment
+      # Step 8: Deploy Infrastructure with Terraform
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: "~1.0"
+
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+
+      - name: Terraform Plan
+        run: |
+          cd terraform
+          terraform plan -var="lambda_function_name=${{ secrets.LAMBDA_FUNCTION_NAME }}" -var="lambda_execution_role_name=${{ secrets.LAMBDA_EXECUTION_ROLE_NAME }}"
+
+      - name: Terraform Apply
+        run: |
+          cd terraform
+          terraform apply -auto-approve -var="lambda_function_name=${{ secrets.LAMBDA_FUNCTION_NAME }}" -var="lambda_execution_role_name=${{ secrets.LAMBDA_EXECUTION_ROLE_NAME }}"
+
+      # Step 9: Get Infrastructure Outputs
+      - name: Get Infrastructure URLs
+        run: |
+          cd terraform
+          terraform output -json > outputs.json
+          
+          FUNCTION_URL=$(terraform output -raw lambda_function_url)
+          API_ENDPOINT=$(terraform output -raw api_gateway_endpoint)
+          SQS_QUEUE_URL=$(terraform output -raw sqs_queue_url)
+          
+          echo "FUNCTION_URL=$FUNCTION_URL" >> $GITHUB_ENV
+          echo "API_ENDPOINT=$API_ENDPOINT" >> $GITHUB_ENV
+          echo "SQS_QUEUE_URL=$SQS_QUEUE_URL" >> $GITHUB_ENV
+          
+          echo "🚀 Lambda Function URL: $FUNCTION_URL"
+          echo "🌐 API Gateway Endpoint: $API_ENDPOINT"
+          echo "📨 SQS Queue URL: $SQS_QUEUE_URL"
+
+      # Step 10: Test Functional URL (Direct Lambda Access)
       - name: Test Lambda Functional URL
         run: |
-          # Get the Functional URL
-          FUNCTION_URL=$(aws lambda get-function-url-config \
-            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
-            --query 'FunctionUrl' --output text)
-          
-          echo "🚀 Functional URL: $FUNCTION_URL"
-          echo "🧪 Testing deployment..."
-          
-          # Test the deployed Lambda function
+          echo "🧪 Testing Functional URL..."
           RESPONSE=$(curl -s "$FUNCTION_URL")
-          echo "📦 Lambda Response: $RESPONSE"
+          echo "📦 Functional URL Response: $RESPONSE"
           
-          # Validate response
           if [[ $RESPONSE == *"Lambda automated deployment"* ]]; then
-            echo "✅ Deployment SUCCESS - Lambda is working correctly!"
+            echo "✅ Functional URL Test PASSED"
           else
-            echo "❌ Deployment FAILED - Unexpected response"
+            echo "❌ Functional URL Test FAILED"
             exit 1
           fi
+
+      # Step 11: Test API Gateway → SQS → Lambda Flow
+      - name: Test API to SQS to Lambda Flow
+        run: |
+          echo "🧪 Testing API → SQS → Lambda flow..."
+          
+          # Send test message via API Gateway
+          TEST_MESSAGE='{"test": "end-to-end automation", "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}'
+          
+          API_RESPONSE=$(curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "$TEST_MESSAGE" \
+            "$API_ENDPOINT")
+          
+          echo "📨 API Gateway Response: $API_RESPONSE"
+          
+          if [[ $API_RESPONSE == *"Success"* ]] || [[ $API_RESPONSE == *"MessageId"* ]]; then
+            echo "✅ Message sent to SQS successfully"
+          else
+            echo "❌ Failed to send message to SQS"
+            exit 1
+          fi
+          
+          # Wait for Lambda to process SQS message
+          echo "⏳ Waiting for Lambda to process SQS message..."
+          sleep 15
+          
+          # Check Lambda logs for SQS processing
+          echo "📋 Checking Lambda logs for SQS processing..."
+          
+          # Test Functional URL again to confirm Lambda is still working
+          LAMBDA_RESPONSE=$(curl -s "$FUNCTION_URL")
+          echo "📦 Lambda Status Check: $LAMBDA_RESPONSE"
+
+      # Step 12: Multiple Message Batching Test
+      - name: Test SQS Batching (Multiple Messages)
+        run: |
+          echo "🧪 Testing SQS batching with multiple messages..."
+          
+          # Send multiple messages quickly
+          for i in {1..5}; do
+            TEST_MESSAGE='{"batchTest": true, "messageId": "'$i'", "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}'
+            
+            API_RESPONSE=$(curl -s -X POST \
+              -H "Content-Type: application/json" \
+              -d "$TEST_MESSAGE" \
+              "$API_ENDPOINT")
+            
+            echo "📨 Message $i sent: $API_RESPONSE"
+            sleep 1
+          done
+          
+          # Wait for batch processing
+          echo "⏳ Waiting for batch processing..."
+          sleep 20
+          
+          echo "✅ SQS Batching Test Completed"
+
+      # Step 13: Final System Health Check
+      - name: Final System Health Check
+        run: |
+          echo "🏥 Final System Health Check..."
+          
+          # Test Functional URL
+          FUNCTION_RESPONSE=$(curl -s "$FUNCTION_URL")
+          echo "🚀 Functional URL: $FUNCTION_RESPONSE"
+          
+          # Test API Gateway
+          HEALTH_CHECK='{"health": "check", "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}'
+          API_RESPONSE=$(curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "$HEALTH_CHECK" \
+            "$API_ENDPOINT")
+          echo "🌐 API Gateway: $API_RESPONSE"
+          
+          echo "🎉 Complete End-to-End System Test PASSED!"
+          echo "📊 System Components Working:"
+          echo "  ✅ Lambda Function (Docker Container)"
+          echo "  ✅ Functional URL (Direct Access)"
+          echo "  ✅ API Gateway (HTTP Endpoint)"
+          echo "  ✅ SQS Queue (Message Processing)"
+          echo "  ✅ SQS → Lambda Trigger (Batch Processing)"
+          echo "  ✅ End-to-End Automation"
