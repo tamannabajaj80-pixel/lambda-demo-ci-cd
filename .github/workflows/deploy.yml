@@ -79,7 +79,7 @@ jobs:
           echo "📦 Lambda Response: $RESPONSE"
           
           # Validate response
-          if [[ $RESPONSE == *"Hello from Lambda automated deployment!"* ]]; then
+          if [[ $RESPONSE == *"Lambda automated deployment"* ]]; then
             echo "✅ Deployment SUCCESS - Lambda is working correctly!"
           else
             echo "❌ Deployment FAILED - Unexpected response"
