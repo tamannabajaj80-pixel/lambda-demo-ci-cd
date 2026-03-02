@@ -66,7 +66,35 @@ jobs:
           echo "API_GATEWAY_ID=$API_ID" >> $GITHUB_ENV
           echo "🌐 API Gateway ID: $API_ID"
 
-      # Step 7: Update Lambda function with new Docker image
+      # Step 7: Create /send endpoint
+      - name: Create /send Endpoint
+        run: |
+          echo "🔧 Creating /send endpoint..."
+          
+          # Get parent resource ID (root)
+          PARENT_ID=$(aws apigateway get-resources --rest-api-id $API_GATEWAY_ID --query 'items[0].id' --output text)
+          echo "📍 Parent Resource ID: $PARENT_ID"
+          
+          # Check if /send resource already exists
+          SEND_RESOURCE_ID=$(aws apigateway get-resources --rest-api-id $API_GATEWAY_ID --query "items[?pathPart=='send'].id" --output text)
+          
+          if [[ -z "$SEND_RESOURCE_ID" || "$SEND_RESOURCE_ID" == "None" ]]; then
+            echo "🆕 Creating /send resource..."
+            RESOURCE_ID=$(aws apigateway create-resource \
+              --rest-api-id $API_GATEWAY_ID \
+              --parent-id $PARENT_ID \
+              --path-part send \
+              --query 'id' --output text)
+            echo "✅ Created /send resource with ID: $RESOURCE_ID"
+          else
+            echo "✅ /send resource already exists with ID: $SEND_RESOURCE_ID"
+            RESOURCE_ID=$SEND_RESOURCE_ID
+          fi
+          
+          echo "SEND_RESOURCE_ID=$RESOURCE_ID" >> $GITHUB_ENV
+          echo "📨 /send endpoint resource ID: $RESOURCE_ID"
+
+      # Step 8: Update Lambda function with new Docker image
       - name: Update Lambda Function
         run: |
           # Point Lambda function to the new Docker image
@@ -74,7 +102,7 @@ jobs:
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
             --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/lambda-build-deploy-auto:latest
 
-      # Step 8: Test the deployment
+      # Step 9: Test the deployment
       - name: Test Lambda Function
         run: |
           echo "🧪 Testing Lambda deployment..."
@@ -92,7 +120,7 @@ jobs:
             exit 1
           fi
 
-      # Step 9: Test SQS Queue
+      # Step 10: Test SQS Queue
       - name: Test SQS Queue
         run: |
           echo "🧪 Testing SQS Queue..."
