@@ -94,81 +94,7 @@ jobs:
           echo "SEND_RESOURCE_ID=$RESOURCE_ID" >> $GITHUB_ENV
           echo "📨 /send endpoint resource ID: $RESOURCE_ID"
 
-      # Step 8: Connect API Gateway to SQS
-      - name: Connect API to SQS
-        run: |
-          echo "🔗 Connecting API Gateway /send endpoint to SQS..."
-          
-          # Create IAM role for API Gateway to access SQS
-          ROLE_NAME="demo-api-sqs-role"
-          
-          # Check if role already exists
-          ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text 2>/dev/null || echo "")
-          
-          if [[ -z "$ROLE_ARN" ]]; then
-            echo "🆕 Creating IAM role for API Gateway..."
-            
-            # Create trust policy
-            cat > trust-policy.json << 'EOF'
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Service": "apigateway.amazonaws.com"
-      },
-      "Action": "sts:AssumeRole"
-    }
-  ]
-}
-EOF
-            
-            # Create role
-            aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document file://trust-policy.json
-            
-            # Create policy for SQS access
-            cat > sqs-policy.json << 'EOF'
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "sqs:SendMessage"
-      ],
-      "Resource": "$SQS_QUEUE_URL"
-    }
-  ]
-}
-EOF
-            
-            # Attach policy
-            aws iam put-role-policy --role-name $ROLE_NAME --policy-name "SQSSendMessage" --policy-document file://sqs-policy.json
-            
-            ROLE_ARN=$(aws iam get-role --role-name $ROLE_NAME --query 'Role.Arn' --output text)
-            echo "✅ Created IAM role: $ROLE_ARN"
-          else
-            echo "✅ IAM role already exists: $ROLE_ARN"
-          fi
-          
-          echo "API_SQS_ROLE_ARN=$ROLE_ARN" >> $GITHUB_ENV
-          
-          # Create integration for POST method
-          aws apigateway put-integration \
-            --rest-api-id $API_GATEWAY_ID \
-            --resource-id $SEND_RESOURCE_ID \
-            --http-method POST \
-            --type AWS \
-            --integration-http-method POST \
-            --uri "arn:aws:apigateway:${{ secrets.AWS_REGION }}:sqs:path/${{ secrets.AWS_ACCOUNT_ID }}/demo-auto-queue" \
-            --credentials $ROLE_ARN \
-            --request-templates '{"application/json":"Action=SendMessage&MessageBody=$util.urlEncode($input.body)"}'
-          
-          echo "✅ Connected API Gateway /send endpoint to SQS!"
-          echo "🔗 API POST → SQS → Lambda (via trigger) chain ready!"
-
-      # Step 9: Update Lambda function with new Docker image
+      # Step 8: Update Lambda function with new Docker image
       - name: Update Lambda Function
         run: |
           # Point Lambda function to the new Docker image
@@ -176,7 +102,30 @@ EOF
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
             --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/lambda-build-deploy-auto:latest
 
-      # Step 10: Deploy API Gateway
+      # Step 9: Create Lambda Trigger on SQS
+      - name: Create Lambda Trigger on SQS
+        run: |
+          echo "🔗 Creating Lambda trigger on SQS..."
+          
+          # Get SQS ARN
+          SQS_ARN=$(aws sqs get-queue-attributes \
+            --queue-url "$SQS_QUEUE_URL" \
+            --attribute-names QueueArn \
+            --query 'Attributes.QueueArn' \
+            --output text)
+          
+          echo "📨 SQS ARN: $SQS_ARN"
+          
+          # Create event source mapping (Lambda trigger)
+          aws lambda create-event-source-mapping \
+            --event-source-arn $SQS_ARN \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --batch-size 10 || echo "✅ Trigger already exists - skipping creation"
+          
+          echo "🔗 Lambda trigger on SQS created!"
+          echo "🎯 SQS → Lambda trigger chain ready!"
+
+      # Step 11: Deploy API Gateway
       - name: Deploy API Gateway
         run: |
           echo "🚀 Deploying API Gateway..."
@@ -195,7 +144,7 @@ EOF
           echo "API_GATEWAY_URL=$API_URL" >> $GITHUB_ENV
           echo "🌐 API Gateway URL: $API_URL"
 
-      # Step 11: Test the deployment
+      # Step 12: Test the deployment
       - name: Test Lambda Function
         run: |
           echo "🧪 Testing Lambda deployment..."
@@ -213,7 +162,7 @@ EOF
             exit 1
           fi
 
-      # Step 12: Test SQS Queue
+      # Step 13: Test SQS Queue
       - name: Test SQS Queue
         run: |
           echo "🧪 Testing SQS Queue..."
