@@ -130,6 +130,15 @@ jobs:
         run: |
           echo "🚀 Deploying API Gateway..."
           
+          # Create POST method for /send endpoint
+          aws apigateway put-method \
+            --rest-api-id $API_GATEWAY_ID \
+            --resource-id $SEND_RESOURCE_ID \
+            --http-method POST \
+            --authorization-type "NONE"
+          
+          echo "✅ POST method created for /send endpoint"
+          
           # Create deployment
           DEPLOYMENT_ID=$(aws apigateway create-deployment \
             --rest-api-id $API_GATEWAY_ID \
