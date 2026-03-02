@@ -36,7 +36,18 @@ jobs:
           # Push image to ECR
           docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/lambda-build-deploy-auto:latest
 
-      # Step 5: Update Lambda function with new Docker image
+      # Step 5: Create SQS Queue (Smart Creation)
+      - name: Create SQS Queue
+        run: |
+          echo "🔍 Checking/Creating SQS queue..."
+          aws sqs create-queue --queue-name demo-auto-queue || echo "✅ Queue already exists - skipping creation"
+          
+          # Get queue URL
+          QUEUE_URL=$(aws sqs get-queue-url --queue-name demo-auto-queue --output text)
+          echo "SQS_QUEUE_URL=$QUEUE_URL" >> $GITHUB_ENV
+          echo "📨 SQS Queue URL: $QUEUE_URL"
+
+      # Step 6: Update Lambda function with new Docker image
       - name: Update Lambda Function
         run: |
           # Point Lambda function to the new Docker image
@@ -44,7 +55,7 @@ jobs:
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
             --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/lambda-build-deploy-auto:latest
 
-      # Step 6: Test the deployment
+      # Step 7: Test the deployment
       - name: Test Lambda Function
         run: |
           echo "🧪 Testing Lambda deployment..."
@@ -53,7 +64,7 @@ jobs:
           FUNCTION_URL="https://jxmv5nfxua7xh6gbdjt7d2fmby0cpvfd.lambda-url.ap-south-1.on.aws/"
           RESPONSE=$(curl -s "$FUNCTION_URL")
           
-          echo "� Lambda Response: $RESPONSE"
+          echo "📦 Lambda Response: $RESPONSE"
           
           if [[ $RESPONSE == *"Lambda automated deployment"* ]]; then
             echo "✅ Deployment SUCCESS - Lambda is working!"
@@ -61,3 +72,19 @@ jobs:
             echo "❌ Deployment FAILED - Unexpected response"
             exit 1
           fi
+
+      # Step 8: Test SQS Queue
+      - name: Test SQS Queue
+        run: |
+          echo "🧪 Testing SQS Queue..."
+          
+          # Send test message to SQS
+          TEST_MESSAGE='{"test": "sqs_test", "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}'
+          
+          aws sqs send-message \
+            --queue-url "$SQS_QUEUE_URL" \
+            --message-body "$TEST_MESSAGE"
+          
+          echo "✅ Test message sent to SQS: $TEST_MESSAGE"
+          echo "📨 SQS Queue URL: $SQS_QUEUE_URL"
+          echo "🎉 SQS Queue is working!"
