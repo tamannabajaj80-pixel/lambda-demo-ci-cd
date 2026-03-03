@@ -122,7 +122,7 @@ jobs:
             --http-method POST \
             --type AWS_PROXY \
             --integration-http-method POST \
-            --uri $LAMBDA_ARN
+            --uri "arn:aws:apigateway:${{ secrets.AWS_REGION }}:lambda:path/2015-03-31/functions/$LAMBDA_ARN/invocations"
           
           echo "✅ AWS_PROXY integration created!"
           echo "🚀 API Gateway → Lambda direct connection ready!"
