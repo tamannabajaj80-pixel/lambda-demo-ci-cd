@@ -132,23 +132,37 @@ jobs:
         run: |
           echo "🚀 Deploying API Gateway with Lambda proxy..."
           
-          # Create POST method for /send endpoint
-          aws apigateway put-method \
+          # Check if POST method already exists
+          POST_METHOD=$(aws apigateway get-method \
             --rest-api-id $API_GATEWAY_ID \
             --resource-id $SEND_RESOURCE_ID \
             --http-method POST \
-            --authorization-type "NONE"
+            --query 'httpMethod' \
+            --output text 2>/dev/null || echo "")
           
-          echo "✅ POST method created for /send endpoint"
+          if [[ -z "$POST_METHOD" || "$POST_METHOD" == "None" ]]; then
+            echo "🆕 Creating POST method for /send endpoint"
+            aws apigateway put-method \
+              --rest-api-id $API_GATEWAY_ID \
+              --resource-id $SEND_RESOURCE_ID \
+              --http-method POST \
+              --authorization-type "NONE"
+          else
+            echo "✅ POST method already exists for /send endpoint"
+          fi
           
           # Create deployment
           DEPLOYMENT_ID=$(aws apigateway create-deployment \
             --rest-api-id $API_GATEWAY_ID \
             --stage-name prod \
             --query 'id' \
-            --output text)
+            --output text || echo "Deployment already exists")
           
-          echo "✅ API Gateway deployed with ID: $DEPLOYMENT_ID"
+          if [[ -n "$DEPLOYMENT_ID" && "$DEPLOYMENT_ID" != "None" ]]; then
+            echo "✅ API Gateway deployed with ID: $DEPLOYMENT_ID"
+          else
+            echo "✅ API Gateway deployment already exists"
+          fi
           
           # Get API URL
           API_URL="https://$API_GATEWAY_ID.execute-api.${{ secrets.AWS_REGION }}.amazonaws.com/prod/send"
