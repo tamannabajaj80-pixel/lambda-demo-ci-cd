@@ -124,7 +124,26 @@ jobs:
             --integration-http-method POST \
             --uri "arn:aws:apigateway:${{ secrets.AWS_REGION }}:lambda:path/2015-03-31/functions/$LAMBDA_ARN/invocations"
           
-          echo "✅ AWS_PROXY integration created!"
+          # Verify integration was created
+          INTEGRATION=$(aws apigateway get-integration \
+            --rest-api-id $API_GATEWAY_ID \
+            --resource-id $SEND_RESOURCE_ID \
+            --http-method POST \
+            --query 'type' \
+            --output text 2>/dev/null || echo "")
+          
+          if [[ "$INTEGRATION" == "AWS_PROXY" ]]; then
+            echo "✅ AWS_PROXY integration created and verified!"
+          else
+            echo "❌ AWS_PROXY integration failed - recreating..."
+            aws apigateway put-integration \
+              --rest-api-id $API_GATEWAY_ID \
+              --resource-id $SEND_RESOURCE_ID \
+              --http-method POST \
+              --type AWS_PROXY \
+              --integration-http-method POST \
+              --uri "arn:aws:apigateway:${{ secrets.AWS_REGION }}:lambda:path/2015-03-31/functions/$LAMBDA_ARN/invocations"
+          fi
           echo "🚀 API Gateway → Lambda direct connection ready!"
 
       # Step 9: Deploy API Gateway
