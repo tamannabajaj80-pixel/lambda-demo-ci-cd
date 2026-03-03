@@ -187,7 +187,46 @@ jobs:
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
             --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/lambda-build-deploy-auto:latest
 
-      # Step 11: Test the deployment
+      # Step 11: Create Lambda Trigger on SQS (Batch Size 1 - Instant)
+      - name: Create Lambda Trigger on SQS
+        run: |
+          echo "🔗 Creating Lambda trigger on SQS (Batch Size: 1 - Instant Processing)..."
+          
+          # Get SQS ARN
+          SQS_ARN=$(aws sqs get-queue-attributes \
+            --queue-url "$SQS_QUEUE_URL" \
+            --attribute-names QueueArn \
+            --query 'Attributes.QueueArn' \
+            --output text)
+          
+          echo "📨 SQS ARN: $SQS_ARN"
+          
+          # Create event source mapping (Lambda trigger) with batch size 1
+          aws lambda create-event-source-mapping \
+            --event-source-arn $SQS_ARN \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --batch-size 1 || echo "✅ Trigger already exists - updating batch size"
+          
+          # If trigger exists, update batch size to 1
+          EVENT_SOURCE_MAPPINGS=$(aws lambda list-event-source-mappings \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --query 'EventSourceMappings[?EventSourceArn==`'$SQS_ARN'`].UUID' \
+            --output text)
+          
+          for MAPPING_ID in $EVENT_SOURCE_MAPPINGS; do
+            if [[ -n "$MAPPING_ID" && "$MAPPING_ID" != "None" ]]; then
+              echo "🔄 Updating existing trigger batch size to 1..."
+              aws lambda update-event-source-mapping \
+                --uuid $MAPPING_ID \
+                --batch-size 1
+              echo "✅ Batch size updated to 1 for instant processing!"
+            fi
+          done
+          
+          echo "🔗 Lambda trigger on SQS created with batch size 1!"
+          echo "⚡ SQS → Lambda instant processing ready!"
+
+      # Step 12: Test the deployment
       - name: Test Lambda Function
         run: |
           echo "🧪 Testing Lambda deployment..."
@@ -205,7 +244,7 @@ jobs:
             exit 1
           fi
 
-      # Step 12: Test API Gateway (Direct Lambda Integration)
+      # Step 13: Test API Gateway (Direct Lambda Integration)
       - name: Test API Gateway
         run: |
           echo "🧪 Testing API Gateway → Lambda direct integration..."
@@ -228,7 +267,7 @@ jobs:
             exit 1
           fi
 
-      # Step 13: Test SQS Queue (Optional - for manual testing)
+      # Step 14: Test SQS Queue (Optional - for manual testing)
       - name: Test SQS Queue
         run: |
           echo "🧪 Testing SQS Queue..."
