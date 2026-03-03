@@ -94,36 +94,74 @@ jobs:
           echo "SEND_RESOURCE_ID=$RESOURCE_ID" >> $GITHUB_ENV
           echo "📨 /send endpoint resource ID: $RESOURCE_ID"
 
-      # Step 8: Update Lambda function with new Docker image
+      # Step 8: Create Lambda Proxy Integration
+      - name: Create Lambda Proxy Integration
+        run: |
+          echo "🔗 Creating AWS_PROXY integration (API → Lambda directly)..."
+          
+          # Get Lambda function ARN
+          LAMBDA_ARN=$(aws lambda get-function \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --query 'Configuration.FunctionArn' \
+            --output text)
+          
+          echo "🎯 Lambda ARN: $LAMBDA_ARN"
+          
+          # Add permission for API Gateway to invoke Lambda
+          aws lambda add-permission \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --statement-id api-gateway-invoke \
+            --action lambda:InvokeFunction \
+            --principal apigateway.amazonaws.com \
+            --source-arn "arn:aws:execute-api:${{ secrets.AWS_REGION }}:${{ secrets.AWS_ACCOUNT_ID }}:$API_GATEWAY_ID/*/POST/send" || echo "✅ Permission already exists"
+          
+          # Create AWS_PROXY integration (direct Lambda integration)
+          aws apigateway put-integration \
+            --rest-api-id $API_GATEWAY_ID \
+            --resource-id $SEND_RESOURCE_ID \
+            --http-method POST \
+            --type AWS_PROXY \
+            --integration-http-method POST \
+            --uri $LAMBDA_ARN
+          
+          echo "✅ AWS_PROXY integration created!"
+          echo "🚀 API Gateway → Lambda direct connection ready!"
+
+      # Step 9: Deploy API Gateway
+      - name: Deploy API Gateway
+        run: |
+          echo "🚀 Deploying API Gateway with Lambda proxy..."
+          
+          # Create POST method for /send endpoint
+          aws apigateway put-method \
+            --rest-api-id $API_GATEWAY_ID \
+            --resource-id $SEND_RESOURCE_ID \
+            --http-method POST \
+            --authorization-type "NONE"
+          
+          echo "✅ POST method created for /send endpoint"
+          
+          # Create deployment
+          DEPLOYMENT_ID=$(aws apigateway create-deployment \
+            --rest-api-id $API_GATEWAY_ID \
+            --stage-name prod \
+            --query 'id' \
+            --output text)
+          
+          echo "✅ API Gateway deployed with ID: $DEPLOYMENT_ID"
+          
+          # Get API URL
+          API_URL="https://$API_GATEWAY_ID.execute-api.${{ secrets.AWS_REGION }}.amazonaws.com/prod/send"
+          echo "API_GATEWAY_URL=$API_URL" >> $GITHUB_ENV
+          echo "🌐 API Gateway URL: $API_URL"
+
+      # Step 10: Update Lambda function with new Docker image
       - name: Update Lambda Function
         run: |
           # Point Lambda function to the new Docker image
           aws lambda update-function-code \
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
             --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/lambda-build-deploy-auto:latest
-
-      # Step 9: Create Lambda Trigger on SQS
-      - name: Create Lambda Trigger on SQS
-        run: |
-          echo "🔗 Creating Lambda trigger on SQS..."
-          
-          # Get SQS ARN
-          SQS_ARN=$(aws sqs get-queue-attributes \
-            --queue-url "$SQS_QUEUE_URL" \
-            --attribute-names QueueArn \
-            --query 'Attributes.QueueArn' \
-            --output text)
-          
-          echo "📨 SQS ARN: $SQS_ARN"
-          
-          # Create event source mapping (Lambda trigger)
-          aws lambda create-event-source-mapping \
-            --event-source-arn $SQS_ARN \
-            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
-            --batch-size 10 || echo "✅ Trigger already exists - skipping creation"
-          
-          echo "🔗 Lambda trigger on SQS created!"
-          echo "🎯 SQS → Lambda trigger chain ready!"
 
       # Step 11: Test the deployment
       - name: Test Lambda Function
@@ -143,7 +181,30 @@ jobs:
             exit 1
           fi
 
-      # Step 12: Test SQS Queue
+      # Step 12: Test API Gateway (Direct Lambda Integration)
+      - name: Test API Gateway
+        run: |
+          echo "🧪 Testing API Gateway → Lambda direct integration..."
+          
+          # Test API Gateway endpoint
+          TEST_MESSAGE='{"message": "Hello from API Gateway!", "test": "direct_lambda_integration"}'
+          
+          API_RESPONSE=$(curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "$TEST_MESSAGE" \
+            "$API_GATEWAY_URL")
+          
+          echo "📨 API Gateway Response: $API_RESPONSE"
+          
+          if [[ $API_RESPONSE == *"Lambda automated deployment"* ]]; then
+            echo "✅ API Gateway → Lambda integration SUCCESS!"
+            echo "🚀 Direct API → Lambda connection working perfectly!"
+          else
+            echo "❌ API Gateway integration FAILED"
+            exit 1
+          fi
+
+      # Step 13: Test SQS Queue (Optional - for manual testing)
       - name: Test SQS Queue
         run: |
           echo "🧪 Testing SQS Queue..."
