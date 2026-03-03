@@ -160,10 +160,10 @@ jobs:
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
             --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/lambda-build-deploy-auto:latest
 
-      # Step 11: Create Lambda Trigger on SQS (Batch Size 1 - Instant)
+      # Step 11: Create Lambda Trigger on SQS (Batch Size 10)
       - name: Create Lambda Trigger on SQS
         run: |
-          echo "🔗 Creating Lambda trigger on SQS (Batch Size: 1 - Instant Processing)..."
+          echo "🔗 Creating Lambda trigger on SQS (Batch Size: 10)..."
           
           # Get SQS ARN
           SQS_ARN=$(aws sqs get-queue-attributes \
@@ -174,13 +174,13 @@ jobs:
           
           echo "📨 SQS ARN: $SQS_ARN"
           
-          # Create event source mapping (Lambda trigger) with batch size 1
+          # Create event source mapping (Lambda trigger) with batch size 10
           aws lambda create-event-source-mapping \
             --event-source-arn $SQS_ARN \
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
-            --batch-size 1 || echo "✅ Trigger already exists - updating batch size"
+            --batch-size 10 || echo "✅ Trigger already exists - updating batch size"
           
-          # If trigger exists, update batch size to 1
+          # If trigger exists, update batch size to 10
           EVENT_SOURCE_MAPPINGS=$(aws lambda list-event-source-mappings \
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
             --query 'EventSourceMappings[?EventSourceArn==`'$SQS_ARN'`].UUID' \
@@ -188,16 +188,16 @@ jobs:
           
           for MAPPING_ID in $EVENT_SOURCE_MAPPINGS; do
             if [[ -n "$MAPPING_ID" && "$MAPPING_ID" != "None" ]]; then
-              echo "🔄 Updating existing trigger batch size to 1..."
+              echo "🔄 Updating existing trigger batch size to 10..."
               aws lambda update-event-source-mapping \
                 --uuid $MAPPING_ID \
-                --batch-size 1
-              echo "✅ Batch size updated to 1 for instant processing!"
+                --batch-size 10
+              echo "✅ Batch size updated to 10!"
             fi
           done
           
-          echo "🔗 Lambda trigger on SQS created with batch size 1!"
-          echo "⚡ SQS → Lambda instant processing ready!"
+          echo "🔗 Lambda trigger on SQS created with batch size 10!"
+          echo "⚡ SQS → Lambda batch processing ready (10 messages per batch)!"
 
       # Step 12: Test the deployment
       - name: Test Lambda Function
