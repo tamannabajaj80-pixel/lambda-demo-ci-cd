@@ -148,7 +148,12 @@ jobs:
               --http-method POST \
               --authorization-type "NONE"
           else
-            echo "🔄 Updating POST method authorization to NONE"
+            echo "🔄 Deleting and recreating POST method with NONE authorization"
+            aws apigateway delete-method \
+              --rest-api-id $API_GATEWAY_ID \
+              --resource-id $SEND_RESOURCE_ID \
+              --http-method POST || echo "Method deletion failed"
+            
             aws apigateway put-method \
               --rest-api-id $API_GATEWAY_ID \
               --resource-id $SEND_RESOURCE_ID \
