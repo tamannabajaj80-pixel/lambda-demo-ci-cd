@@ -94,28 +94,41 @@ jobs:
           echo "SEND_RESOURCE_ID=$RESOURCE_ID" >> $GITHUB_ENV
           echo "📨 /send endpoint resource ID: $RESOURCE_ID"
 
-      # Step 8: Create Lambda Proxy Integration
-      - name: Create Lambda Proxy Integration
+      # Step 8: Setup API Gateway Method + Lambda Integration + Deploy
+      - name: Setup API Gateway with Lambda Integration
         run: |
-          echo "🔗 Creating AWS_PROXY integration (API → Lambda directly)..."
+          echo "🔗 Setting up API Gateway with Lambda integration..."
           
-          # Get Lambda function ARN
+          # Step A: Delete existing POST method (cleans up old integration)
+          aws apigateway delete-method \
+            --rest-api-id $API_GATEWAY_ID \
+            --resource-id $SEND_RESOURCE_ID \
+            --http-method POST 2>/dev/null || echo "No existing method to delete"
+          
+          # Step B: Create fresh POST method
+          aws apigateway put-method \
+            --rest-api-id $API_GATEWAY_ID \
+            --resource-id $SEND_RESOURCE_ID \
+            --http-method POST \
+            --authorization-type "NONE"
+          echo "✅ POST method created with NONE authorization"
+          
+          # Step C: Get Lambda ARN
           LAMBDA_ARN=$(aws lambda get-function \
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
             --query 'Configuration.FunctionArn' \
             --output text)
-          
           echo "🎯 Lambda ARN: $LAMBDA_ARN"
           
-          # Add permission for API Gateway to invoke Lambda
+          # Step D: Add permission for API Gateway to invoke Lambda
           aws lambda add-permission \
             --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
             --statement-id api-gateway-invoke \
             --action lambda:InvokeFunction \
             --principal apigateway.amazonaws.com \
-            --source-arn "arn:aws:execute-api:${{ secrets.AWS_REGION }}:${{ secrets.AWS_ACCOUNT_ID }}:$API_GATEWAY_ID/*/POST/send" || echo "✅ Permission already exists"
+            --source-arn "arn:aws:execute-api:${{ secrets.AWS_REGION }}:${{ secrets.AWS_ACCOUNT_ID }}:$API_GATEWAY_ID/*/POST/send" 2>/dev/null || echo "✅ Permission already exists"
           
-          # Create AWS_PROXY integration (direct Lambda integration)
+          # Step E: Create AWS_PROXY integration (AFTER method creation)
           aws apigateway put-integration \
             --rest-api-id $API_GATEWAY_ID \
             --resource-id $SEND_RESOURCE_ID \
@@ -123,80 +136,21 @@ jobs:
             --type AWS_PROXY \
             --integration-http-method POST \
             --uri "arn:aws:apigateway:${{ secrets.AWS_REGION }}:lambda:path/2015-03-31/functions/$LAMBDA_ARN/invocations"
+          echo "✅ AWS_PROXY integration created"
           
-          # Verify integration was created
-          INTEGRATION=$(aws apigateway get-integration \
-            --rest-api-id $API_GATEWAY_ID \
-            --resource-id $SEND_RESOURCE_ID \
-            --http-method POST \
-            --query 'type' \
-            --output text 2>/dev/null || echo "")
-          
-          if [[ "$INTEGRATION" == "AWS_PROXY" ]]; then
-            echo "✅ AWS_PROXY integration created and verified!"
-          else
-            echo "❌ AWS_PROXY integration failed - recreating..."
-            aws apigateway put-integration \
-              --rest-api-id $API_GATEWAY_ID \
-              --resource-id $SEND_RESOURCE_ID \
-              --http-method POST \
-              --type AWS_PROXY \
-              --integration-http-method POST \
-              --uri "arn:aws:apigateway:${{ secrets.AWS_REGION }}:lambda:path/2015-03-31/functions/$LAMBDA_ARN/invocations"
-          fi
-          echo "🚀 API Gateway → Lambda direct connection ready!"
-
-      # Step 9: Deploy API Gateway
-      - name: Deploy API Gateway
-        run: |
-          echo "🚀 Deploying API Gateway with Lambda proxy..."
-          
-          # Check if POST method already exists
-          POST_METHOD=$(aws apigateway get-method \
-            --rest-api-id $API_GATEWAY_ID \
-            --resource-id $SEND_RESOURCE_ID \
-            --http-method POST \
-            --query 'httpMethod' \
-            --output text 2>/dev/null || echo "")
-          
-          if [[ -z "$POST_METHOD" || "$POST_METHOD" == "None" ]]; then
-            echo "🆕 Creating POST method for /send endpoint"
-            aws apigateway put-method \
-              --rest-api-id $API_GATEWAY_ID \
-              --resource-id $SEND_RESOURCE_ID \
-              --http-method POST \
-              --authorization-type "NONE"
-          else
-            echo "🔄 Deleting and recreating POST method with NONE authorization"
-            aws apigateway delete-method \
-              --rest-api-id $API_GATEWAY_ID \
-              --resource-id $SEND_RESOURCE_ID \
-              --http-method POST || echo "Method deletion failed"
-            
-            aws apigateway put-method \
-              --rest-api-id $API_GATEWAY_ID \
-              --resource-id $SEND_RESOURCE_ID \
-              --http-method POST \
-              --authorization-type "NONE"
-          fi
-          
-          # Create deployment
+          # Step F: Deploy API Gateway
           DEPLOYMENT_ID=$(aws apigateway create-deployment \
             --rest-api-id $API_GATEWAY_ID \
             --stage-name prod \
             --query 'id' \
-            --output text || echo "Deployment already exists")
-          
-          if [[ -n "$DEPLOYMENT_ID" && "$DEPLOYMENT_ID" != "None" ]]; then
-            echo "✅ API Gateway deployed with ID: $DEPLOYMENT_ID"
-          else
-            echo "✅ API Gateway deployment already exists"
-          fi
+            --output text)
+          echo "✅ API Gateway deployed with ID: $DEPLOYMENT_ID"
           
           # Get API URL
           API_URL="https://$API_GATEWAY_ID.execute-api.${{ secrets.AWS_REGION }}.amazonaws.com/prod/send"
           echo "API_GATEWAY_URL=$API_URL" >> $GITHUB_ENV
           echo "🌐 API Gateway URL: $API_URL"
+          echo "🚀 Complete: Method → Integration → Deploy done!"
 
       # Step 10: Update Lambda function with new Docker image
       - name: Update Lambda Function
