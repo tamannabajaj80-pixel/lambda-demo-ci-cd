@@ -148,7 +148,12 @@ jobs:
               --http-method POST \
               --authorization-type "NONE"
           else
-            echo "✅ POST method already exists for /send endpoint"
+            echo "🔄 Updating POST method authorization to NONE"
+            aws apigateway put-method \
+              --rest-api-id $API_GATEWAY_ID \
+              --resource-id $SEND_RESOURCE_ID \
+              --http-method POST \
+              --authorization-type "NONE"
           fi
           
           # Create deployment
